@@ -12,13 +12,13 @@ from functools import reduce
 
 
 class Args:
-    def __init__(self,max_length,friends_long_short_term,grid_feature,friend_layer_num,type_flag):
+    def __init__(self,max_length,friend_layer_num):
         self.training = True
         self.epochs = 100
         self.aggregator_type='attn'
         self.act='relu'
         self.batch_size = 200
-        self.max_degree = 50 # 最大连接的关系
+        self.max_degree = 50
         self.num_users = -1
         self.num_items = 100
         self.concat=False
@@ -36,22 +36,9 @@ class Args:
         self.decay_steps=400
         self.decay_rate=0.98
         self.num_feature=-1
-        self.type_flag=type_flag
-        if friends_long_short_term=='1&0':
-            self.global_only = True
-            self.local_only = False
-        elif friends_long_short_term=='0&1':
-            self.global_only = False
-            self.local_only = True
-        elif friends_long_short_term=='1&1':
-            self.global_only = False
-            self.local_only = False
-        self.grid_feature=grid_feature
-        if type_flag in ['baseline','self']:
-            self.friend_layer_num=1
-            self.friends_long_short_term='1&1'
-        else:
-            self.friend_layer_num=friend_layer_num
+        self.global_only = False
+        self.local_only = False
+        self.friend_layer_num=friend_layer_num
         if self.friend_layer_num==1:
             self.samples=[10]
             self.dims=[200]
@@ -87,8 +74,8 @@ def construct_placeholders(args):
         placeholders['support_nodes_layer3']=tf.placeholder(tf.int32, shape=(args.batch_size*p),name='support_nodes_layer3')
         placeholders['support_sessions_layer3']=tf.placeholder(tf.int32, shape=(args.batch_size*p,args.max_length),name='support_sessions_layer3')
         placeholders['support_lengths_layer3']=tf.placeholder(tf.int32, shape=(args.batch_size*p),name='support_lengths_layer3')
-    if args.grid_feature:
-        placeholders['grid_info']=tf.placeholder(tf.float32, shape=(args.batch_size,args.num_items-1,args.num_feature), name='grid_info')
+
+    placeholders['grid_info']=tf.placeholder(tf.float32, shape=(args.batch_size,args.num_items-1,args.num_feature), name='grid_info')
     return placeholders
 
 def get_df_attack(social_net,interval,period,item,floder):
@@ -101,7 +88,7 @@ def get_df_attack(social_net,interval,period,item,floder):
         index=df_attack['Timestamp']<=timestamp_
         df_attack=df_attack[index].reset_index(drop=True)
     else:
-        df=pd.read_csv('/home/wujj/Code/Terrorist_Pattern/Data_/04_实验数据/01_恐袭数据/GTD_Pre_Data.csv')
+        df=pd.read_csv('/home/wujj/Code/Terrorist_Pattern/Data_/GTD_Pre_Data.csv')
         if item=='grid':
             df['ItemId']=df['%s_grid'%interval]
         else:
@@ -158,26 +145,25 @@ def get_df_attack(social_net,interval,period,item,floder):
     return df_attack
 
 
-def get_df_net(social_net,net_shuffle,df_attack):
+def get_df_net(social_net,df_attack):
     with open('/data/Experiment/random_seed.txt','r') as f:
         seed=int(f.read())
     random.seed(seed)
-    file='/home/wujj/Code/Terrorist_Pattern/Data_/04_实验数据/02_关系网/socialnet_%s.tsv'%social_net
+    file='/home/wujj/Code/Terrorist_Pattern/Data_/socialnet_%s.tsv'%social_net
     df_net=pd.read_csv(file, sep='\t',dtype={0:str, 1: str})
-    if net_shuffle:
-        index=df_net['Follower'].isin(df_attack['UserId'].unique())
-        comb_group=list(itertools.combinations(df_net[index]['Follower'].unique(),2))
-        df_adj=pd.DataFrame(columns=['Follower','Followee','Weight'])
-        for comb in random.sample(comb_group, int(len(df_net)/2)):
-            id1=comb[0]
-            id2=comb[1]
-            if id1!=id2:
-                df_adj.loc[df_adj.shape[0]]=[id1,id2,1]
-                df_adj.loc[df_adj.shape[0]]=[id2,id1,1]
-        df_net=df_adj
-        df_net.to_csv('/home/wujj/Code/Terrorist_Pattern/Data_/04_实验数据/02_关系网/socialnet_%s_shuffle.tsv'%social_net,sep='\t',index=0)
+    index=df_net['Follower'].isin(df_attack['UserId'].unique())
+    comb_group=list(itertools.combinations(df_net[index]['Follower'].unique(),2))
+    df_adj=pd.DataFrame(columns=['Follower','Followee','Weight'])
+    for comb in random.sample(comb_group, int(len(df_net)/2)):
+        id1=comb[0]
+        id2=comb[1]
+        if id1!=id2:
+            df_adj.loc[df_adj.shape[0]]=[id1,id2,1]
+            df_adj.loc[df_adj.shape[0]]=[id2,id1,1]
+    df_net=df_adj
+    df_net.to_csv('/home/wujj/Code/Terrorist_Pattern/Data_/socialnet_%s_shuffle.tsv'%social_net,sep='\t',index=0)
     friend_size=df_net.groupby('Follower').size()
-    index=df_net['Follower'].isin(friend_size[friend_size>=1].index) # 至少有n个关系
+    index=df_net['Follower'].isin(friend_size[friend_size>=1].index) 
     df_net=df_net[index].reset_index(drop=True)
     return df_net
 
@@ -196,23 +182,19 @@ def split_data(parameter):
     np.random.seed(seed)
     try:
         floder='/data/Experiment/'
-        social_net,interval,period,max_length,grid_feature,friends_long_short_term,item,net_shuffle,friend_layer_num,type_flag=parameter
-        result_floder=floder+'%s/%s_degree/%s/%s_net_shuffle_%s/'%(social_net,interval,period,item,net_shuffle)
+        social_net,interval,period,max_length,item,friend_layer_num=parameter
+        result_floder=floder+'%s/%s_degree/%s/%s/'%(social_net,interval,period,item)
         df_attack=get_df_attack(social_net,interval,period,item,floder)
         session_id=[str(uid)+'_'+str(tid) for uid, tid in zip(df_attack['UserId'].astype(int), df_attack['TimeId'].astype(int))]
         df_attack['SessionId']=session_id
-        df_net=get_df_net(social_net,net_shuffle,df_attack)
-        # 关系网中Follower和Followee都需要在行动记录中出现
+        df_net=get_df_net(social_net,df_attack)
         df_net=df_net.loc[df_net['Follower'].isin(df_attack['UserId'].unique())]
         df_net=df_net.loc[df_net['Followee'].isin(df_attack['UserId'].unique())]
-        # 两者求交集
         df_attack=df_attack.loc[df_attack['UserId'].isin(df_net.Follower.unique())].reset_index(drop=True)
-        # SessionId至少出现两次,两次以上才能形成序列
         df_attack=df_attack[df_attack.groupby('SessionId')['SessionId'].transform('size')>1].reset_index(drop=True)
         tmax=df_attack.TimeId.max()
         tmin=df_attack.TimeId.min()
         session_max_times=df_attack.groupby('SessionId').TimeId.max()
-        # 排除只有一个SessionId且位于最后一个TimeId的UserId
         user2sessions=df_attack.groupby('UserId')['SessionId'].apply(set).apply(len)
         index1=df_attack['UserId'].isin(user2sessions[user2sessions<2].index)
         index1=df_attack['UserId'].isin(user2sessions[user2sessions<2].index)
@@ -220,29 +202,23 @@ def split_data(parameter):
         if len(df_attack[index1][index2])>0:
             index3=index1&index2
             df_attack=df_attack[~index3]
-        # 训练集占80%
         num=int((tmax-tmin+1)*0.2)
         session_train=session_max_times[session_max_times < tmax - num].index
         session_holdout=session_max_times[session_max_times >= tmax - num].index
         train_set=df_attack[df_attack['SessionId'].isin(session_train)] 
         holdout_set=df_attack[df_attack['SessionId'].isin(session_holdout)]
-        # 在训练集中ItemId至少出现两次
         train_set=train_set[train_set.groupby('ItemId')['ItemId'].transform('size')>1] 
-        # 在训练集中SessionId至少出现两次,两次以上才能形成序列
         train_set=train_set[train_set.groupby('SessionId')['SessionId'].transform('size')>1]
-        # 在训练集中某个UserId的SessionId至少出现两次,两次以上才能挖掘行动规律（长期和短期）
         train_set=train_set[train_set.groupby('UserId')['SessionId'].transform('nunique')>1]
         item_to_predict=train_set['ItemId'].unique()
         holdout_cn=holdout_set.SessionId.nunique()
         holdout_ids=holdout_set.SessionId.unique()
         np.random.shuffle(holdout_ids)
-        # 验证集和测试集各占剩下20%的一半
         valid_cn=int(holdout_cn * 0.5)
         session_valid=holdout_ids[0: valid_cn]
         session_test=holdout_ids[valid_cn: ]
         valid_set=holdout_set[holdout_set['SessionId'].isin(session_valid)]
         test_set=holdout_set[holdout_set['SessionId'].isin(session_test)]
-        # 在验证集和测试集中SessionId只有一个的话不能出现在最后一个SessionId
         valid_set=valid_set[valid_set['ItemId'].isin(item_to_predict)]
         valid_set=valid_set[valid_set.groupby('SessionId')['SessionId'].transform('size')>1]
         valid_set=valid_set[valid_set.groupby('UserId')['TimeId'].transform('min')!=tmax]
@@ -298,6 +274,3 @@ def split_data(parameter):
                 t=f.write(','.join(user_latest_session[idx]) + '\n')
     except Exception as ex:
         print(ex.__traceback__.tb_lineno,ex,parameter)
-
-# parameter=('GTD',0.1,'1week',20,1,'11','grid',0)
-# df=split_data(parameter)

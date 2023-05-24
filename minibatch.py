@@ -6,7 +6,8 @@ import numpy as np
 import pandas as pd
 
 import sys
-sys.path.append('/home/wujj/Code/Terrorist_Pattern/dgrec_final')
+floder='/home/wujj/Code/Terrorist_Pattern/dgrec_final/'
+sys.path.append(floder)
 from neigh_samplers import UniformNeighborSampler
 from utils import *
 from sklearn.preprocessing import MinMaxScaler
@@ -24,7 +25,6 @@ class MinibatchIterator(object):
                 max_degree,
                 num_nodes,
                 max_length,
-                grid_feature,
                 friend_layer_num,
                 samples,
                 dims,
@@ -43,7 +43,6 @@ class MinibatchIterator(object):
         self.max_degree = max_degree
         self.num_nodes = num_nodes
         self.max_length = max_length
-        self.grid_feature = grid_feature
         self.samples = samples
         self.dims = dims
         self.visible_time = self.user_visible_time()
@@ -70,24 +69,24 @@ class MinibatchIterator(object):
             k=self.num_layers-i-1
             n*=self.samples[k]
             self.sizes.append(n)
-        if self.grid_feature:
-            cols=df.columns.values[2:]
-            new_id=[item_id_map[i] for i in item_id_map.keys()]
-            item_id_df= pd.DataFrame({'ItemId':item_id_map.keys(),'Id':new_id})
-            item_id_df['Id']=item_id_df['Id'].astype(np.int64)
-            grid_id_df=self.all_data[['ItemId','Grid']].drop_duplicates()
-            item_grid_df=pd.merge(item_id_df,grid_id_df, how='left',left_on=['Id'],right_on=['ItemId'],suffixes=('', '_'))
-            index=df['ItemId'].isin(item_grid_df['Grid'].unique())
-            df_final=pd.merge(df[index],item_grid_df, how='left',left_on=['ItemId'],right_on=['Grid'],suffixes=('', '__s'))
-            df_final=df_final.sort_values(by=['Id','TimeId'],ascending=True).reset_index(drop=True)
-            X=df_final[cols].values
-            scaler = MinMaxScaler()
-            X_scaled = scaler.fit_transform(X)
-            df_final[cols]=X_scaled
-            self.dicts={}
-            for timeid in df_final['TimeId'].unique():
-                temp=df_final[df_final['TimeId']==timeid]
-                self.dicts[str(int(timeid))]=temp[cols].values
+
+        cols=df.columns.values[2:]
+        new_id=[item_id_map[i] for i in item_id_map.keys()]
+        item_id_df= pd.DataFrame({'ItemId':item_id_map.keys(),'Id':new_id})
+        item_id_df['Id']=item_id_df['Id'].astype(np.int64)
+        grid_id_df=self.all_data[['ItemId','Grid']].drop_duplicates()
+        item_grid_df=pd.merge(item_id_df,grid_id_df, how='left',left_on=['Id'],right_on=['ItemId'],suffixes=('', '_'))
+        index=df['ItemId'].isin(item_grid_df['Grid'].unique())
+        df_final=pd.merge(df[index],item_grid_df, how='left',left_on=['ItemId'],right_on=['Grid'],suffixes=('', '__s'))
+        df_final=df_final.sort_values(by=['Id','TimeId'],ascending=True).reset_index(drop=True)
+        X=df_final[cols].values
+        scaler = MinMaxScaler()
+        X_scaled = scaler.fit_transform(X)
+        df_final[cols]=X_scaled
+        self.dicts={}
+        for timeid in df_final['TimeId'].unique():
+            temp=df_final[df_final['TimeId']==timeid]
+            self.dicts[str(int(timeid))]=temp[cols].values
         if self.training:
             self.adj, self.deg = self.construct_adj()
             self.train_session_ids,self.train_num_sessions,self.train_num_data= self._remove_infoless(self.train_df, self.adj, self.deg)
@@ -176,9 +175,9 @@ class MinibatchIterator(object):
         '''
         Pad zeros at the end of each session to length self.max_length for batch training.
         '''
-        ## 根据伤亡人数进行排序
+        ## Sort by the number of casualties
         data = data.sort_values(by=['TimeId','Rating','Timestamp'],ascending=[True,False,True]).groupby('SessionId')['ItemId'].apply(list).to_dict()
-        ## 根据时间进行排序
+        ## Sort by time
         # data = data.sort_values(by=['TimeId','Timestamp','Rating'],ascending=[True,True,False]).groupby('SessionId')['ItemId'].apply(list).to_dict()
         new_data = {}
         data_mask = {}
@@ -222,8 +221,7 @@ class MinibatchIterator(object):
             input_x.append(x)
             input_y.append(y)
             mask_y.append(mask)
-            if self.grid_feature:
-                grid_info_list.append(self.dicts[timeid])
+            grid_info_list.append(self.dicts[timeid])
         support_layers_session = []
         support_layers_length = []
         for layer in range(self.num_layers):
@@ -262,10 +260,10 @@ class MinibatchIterator(object):
             feed_dict.update({self.placeholders['support_nodes_layer2']: samples[2]})
             feed_dict.update({self.placeholders['support_nodes_layer3']: samples[1]})
                 
-        if self.grid_feature:
-            grid_info=np.dstack(grid_info_list)
-            grid_info=grid_info.reshape(grid_info.shape[2],grid_info.shape[0],grid_info.shape[1])
-            feed_dict.update({self.placeholders['grid_info']: grid_info})
+
+        grid_info=np.dstack(grid_info_list)
+        grid_info=grid_info.reshape(grid_info.shape[2],grid_info.shape[0],grid_info.shape[1])
+        feed_dict.update({self.placeholders['grid_info']: grid_info})
         return feed_dict 
 
     def sample(self, nodeids, timeids, sampler):

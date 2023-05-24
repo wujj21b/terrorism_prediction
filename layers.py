@@ -4,7 +4,8 @@ from __future__ import print_function
 import tensorflow.compat.v1 as tf 
 tf.disable_v2_behavior()
 import sys
-sys.path.append('/home/wujj/Code/Terrorist_Pattern/dgrec_final/')
+floder='/home/wujj/Code/Terrorist_Pattern/dgrec_final/'
+sys.path.append(floder)
 from inits import zeros
 
 

@@ -3,7 +3,8 @@ tf.disable_v2_behavior()
 import numpy as np
 from functools import reduce
 import sys
-sys.path.append('/home/wujj/Code/Terrorist_Pattern/dgrec_final/')
+floder='/home/wujj/Code/Terrorist_Pattern/dgrec_final/'
+sys.path.append(floder)
 from aggregators import *
 from layers import Dense
 
@@ -46,9 +47,6 @@ class DGRec(object):
             self.support_nodes_layer3 = placeholders['support_nodes_layer3']
             self.support_sessions_layer3 = placeholders['support_sessions_layer3']
             self.support_lengths_layer3 = placeholders['support_lengths_layer3']
-        # self.grid_feature=args.grid_feature
-        # self.type_flag=args.type_flag
-        #if self.grid_feature:
         self.grid_info = placeholders['grid_info']
         self.training = args.training
         self.concat = args.concat
@@ -287,35 +285,18 @@ class DGRec(object):
     
     def build(self):
         self.features_0 = features_0 = self.decode() # features of zero layer nodes. 
-        if self.type_flag in ['social','self&social']:
-            if self.global_only:
-                self.features_1_2 = features_1_2 = self.global_features()
-            elif self.local_only:
-                self.features_1_2 = features_1_2 = self.local_features()
-            else:
-                self.features_1_2 = features_1_2 = self.global_and_local_features()
-        if self.grid_feature:
-            self.features_3 = features_3 = self.grid_features()
-        if self.type_flag in ['self','baseline']:
-            if self.grid_feature:
-                self.concat_self = concat_self = tf.concat([features_0, features_3], axis=-1)
-                self.transposed_outputs = tf.transpose(concat_self, [1,0,2])
-            else:
-                self.transposed_outputs = tf.transpose(features_0, [1,0,2])
-        if self.type_flag in ['social','self&social']:
-            self.outputs=outputs=self.step_by_step(features_0,features_1_2, self.dims, self.num_samples,self.support_sizes,concat=self.concat)
-            if self.type_flag=='social':
-                if self.grid_feature:
-                    self.concat_self = concat_self = tf.concat([outputs, features_3], axis=-1)
-                    self.transposed_outputs = tf.transpose(concat_self, [1,0,2])
-                else:
-                    self.transposed_outputs = tf.transpose(outputs, [1,0,2])
-            if self.type_flag=='self&social':
-                if self.grid_feature:
-                    self.concat_self = concat_self = tf.concat([features_0, outputs, features_3], axis=-1)
-                else:
-                    self.concat_self = concat_self = tf.concat([features_0, outputs], axis=-1)
-                self.transposed_outputs = tf.transpose(concat_self, [1,0,2])
+        if self.global_only:
+            self.features_1_2 = features_1_2 = self.global_features()
+        elif self.local_only:
+            self.features_1_2 = features_1_2 = self.local_features()
+        else:
+            self.features_1_2 = features_1_2 = self.global_and_local_features()
+        self.features_3 = features_3 = self.grid_features()
+        self.outputs=outputs=self.step_by_step(features_0,features_1_2, self.dims, self.num_samples,self.support_sizes,concat=self.concat)
+
+        self.concat_self = concat_self = tf.concat([features_0, outputs, features_3], axis=-1)
+
+        self.transposed_outputs = tf.transpose(concat_self, [1,0,2])
         
         self.loss = self._loss()
         self.sum_recall = self._recall()
@@ -335,7 +316,6 @@ class DGRec(object):
             for var in dense_layer.vars.values():
                 reg_loss += self.weight_decay * tf.nn.l2_loss(var)
         self.attention_weights=[]
-        #if self.type_flag in ['social','self&social']:       
         for aggregator in self.aggregators:
             self.attention_weights.append(aggregator.vars['weights'])
             for var in aggregator.vars.values():
